@@ -165,8 +165,7 @@ class Game:
         return self.clone_matrix
 
     # Mutates the matrix by swapping coordinates for bricks
-    def swap_bricks(self, matrix, coord1: (int,int), coord2: (int,int))\
-            ->(NDArray)[np.int32]:
+    def swap_bricks(self, matrix, coord1: (int,int), coord2: (int,int)) -> (NDArray)[np.int32]:
         temp = matrix[coord1]
         matrix[coord1] = matrix[coord2]
         matrix[coord2] = temp
@@ -191,6 +190,30 @@ class Game:
                     return False
 
         return True
+
+    # Normalizes the state for the board matrix
+    # Assigns sequential numbers for all bricks except "2"
+    def normalize_state(self):
+        next_idx = 3 # first available number for a brick
+        rows,cols = self.board_matrix.shape
+        for i in range(rows):
+            for j in range(cols):
+                if self.board_matrix[i][j] == next_idx:
+                    next_idx += 1
+                elif self.board_matrix[i][j] > next_idx:
+                    self.swap_idx(next_idx, self.board_matrix[i][j])
+                    next_idx += 1
+
+    # Swaps the brick number with the sequential index
+    # Mutates the board matrix
+    def swap_idx(self, idx, brick_num):
+        rows, cols = self.board_matrix.shape
+        for i in range(rows):
+            for j in range(cols):
+                if self.board_matrix[i][j] == idx:
+                    self.board_matrix[i][j] = brick_num
+                elif self.board_matrix[i][j] == brick_num:
+                    self.board_matrix[i][j] = idx
 
 if __name__ == "__main__":
     game = Game()
@@ -227,4 +250,9 @@ if __name__ == "__main__":
     elif len(sys.argv) == 4 and sys.argv[1] == "compare":
         isIdentical = game.compare_states(sys.argv[2], sys.argv[3])
         print(isIdentical)
+    elif len(sys.argv) == 3 and sys.argv[1] == "norm":
+        game.import_matrix(sys.argv[2])
+        game.normalize_state()
+        matrix = game.get_board_matrix()
+        game.print_matrix(matrix)
 
