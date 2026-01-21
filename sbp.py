@@ -20,6 +20,9 @@ class Game:
     def get_board_matrix(self):
         return self.board_matrix
 
+    def set_board_matrix(self, matrix) -> None:
+        self.board_matrix = matrix
+
     def create_matrix(self,h,w) -> None:
         self.board_matrix = np.zeros((h, w), dtype=int)
 
@@ -83,24 +86,20 @@ class Game:
         left = 0
         for [i,j] in brick_coords:
             # up
-            if (self.board_matrix[i-1][j] == 0
-                    or self.board_matrix[i-1][j] == -1
-                    or self.board_matrix[i-1][j] == brick_num):
+            if (self.board_matrix[i-1][j] == 0 or self.board_matrix[i-1][j] == brick_num
+                    or (self.board_matrix[i-1][j] == -1 and brick_num == 2)):
                 up += 1
             # right
-            if (self.board_matrix[i][j+1] == 0
-                    or self.board_matrix[i-1][j] == -1
-                    or self.board_matrix[i][j+1] == brick_num):
+            if (self.board_matrix[i][j+1] == 0 or self.board_matrix[i][j+1] == brick_num
+                    or (self.board_matrix[i][j+1] == -1 and brick_num == 2)):
                 right += 1
             # down
-            if (self.board_matrix[i+1][j] == 0
-                    or self.board_matrix[i - 1][j] == -1
-                    or self.board_matrix[i+1][j] == brick_num):
+            if (self.board_matrix[i+1][j] == 0 or self.board_matrix[i+1][j] == brick_num
+                    or (self.board_matrix[i+1][j] == -1 and brick_num == 2)):
                 down += 1
             # left
-            if (self.board_matrix[i][j-1] == 0
-                    or self.board_matrix[i - 1][j] == -1
-                    or self.board_matrix[i][j-1] == brick_num):
+            if (self.board_matrix[i][j-1] == 0 or self.board_matrix[i][j-1] == brick_num
+                    or (self.board_matrix[i][j-1] == -1 and brick_num == 2)):
                 left += 1
 
         # Compare brick peaces with the allowed number of moves
@@ -148,21 +147,42 @@ class Game:
                 brick_coords.sort(key=lambda x: x[1])
 
         # Clone the matrix
-        self.clone_matrix = self.get_clone_matrix()
+        clone_matrix = self.get_clone_matrix()
 
         # Swap bricks based on the move
         for [i,j] in brick_coords:
+            brickCoord = (i, j)
             match user_move:
                 case "up":
-                    self.swap_bricks(self.clone_matrix, (i, j), (i-1, j))
+                    if brick_num == 2 and clone_matrix[i-1][j] == -1:
+                        temp = clone_matrix[brickCoord]
+                        clone_matrix[brickCoord] = 0
+                        clone_matrix[i-1,j] = temp
+                    else:
+                        self.swap_bricks(clone_matrix, brickCoord, (i-1, j))
                 case "right":
-                    self.swap_bricks(self.clone_matrix, (i, j), (i, j+1))
+                    if brick_num == 2 and clone_matrix[i][j+1] == -1:
+                        temp = clone_matrix[brickCoord]
+                        clone_matrix[brickCoord] = 0
+                        clone_matrix[i,j+1] = temp
+                    else:
+                        self.swap_bricks(clone_matrix, brickCoord, (i, j+1))
                 case "down":
-                    self.swap_bricks(self.clone_matrix, (i, j), (i+1, j))
+                    if brick_num == 2 and clone_matrix[i+1][j] == -1:
+                        temp = clone_matrix[brickCoord]
+                        clone_matrix[brickCoord] = 0
+                        clone_matrix[i+1,j] = temp
+                    else:
+                        self.swap_bricks(clone_matrix, brickCoord, (i+1, j))
                 case "left":
-                    self.swap_bricks(self.clone_matrix, (i, j), (i, j-1))
+                    if brick_num == 2 and clone_matrix[i][j-1] == -1:
+                        temp = clone_matrix[brickCoord]
+                        clone_matrix[brickCoord] = 0
+                        clone_matrix[i,j-1] = temp
+                    else:
+                        self.swap_bricks(clone_matrix, brickCoord, (i, j-1))
 
-        return self.clone_matrix
+        return clone_matrix
 
     # Mutates the matrix by swapping coordinates for bricks
     def swap_bricks(self, matrix, coord1: (int,int), coord2: (int,int)) -> (NDArray)[np.int32]:
@@ -192,7 +212,7 @@ class Game:
         return True
 
     # Normalizes the state for the board matrix
-    # Assigns sequential numbers for all bricks except "2"
+    # Assigns sequential numbers for all bricks with a number > 2
     def normalize_state(self):
         next_idx = 3 # first available number for a brick
         rows,cols = self.board_matrix.shape
@@ -201,12 +221,12 @@ class Game:
                 if self.board_matrix[i][j] == next_idx:
                     next_idx += 1
                 elif self.board_matrix[i][j] > next_idx:
-                    self.swap_idx(next_idx, self.board_matrix[i][j])
+                    self.assign_index(next_idx, self.board_matrix[i][j])
                     next_idx += 1
 
-    # Swaps the brick number with the sequential index
+    # Assigns new brick number for the provided brick number
     # Mutates the board matrix
-    def swap_idx(self, idx, brick_num):
+    def assign_index(self, idx, brick_num):
         rows, cols = self.board_matrix.shape
         for i in range(rows):
             for j in range(cols):
@@ -255,4 +275,27 @@ if __name__ == "__main__":
         game.normalize_state()
         matrix = game.get_board_matrix()
         game.print_matrix(matrix)
+    elif len(sys.argv) == 4 and sys.argv[1] == "random":
+        N = int(sys.argv[3])
+        game.import_matrix(sys.argv[2])
 
+        for i in range(N):
+            # 1. Generate all the moves for the board
+            all_moves = game.get_moves()
+
+            # 2. Select a random move
+            idx = np.random.randint(len(all_moves))
+            brick_num, move = all_moves[idx]
+            print(f"({brick_num}, {move})")
+
+            # 3. Execute the selected move
+            matrix_after_move = game.move_brick(brick_num, move)
+            game.print_matrix(matrix_after_move)
+
+            # 4. Normalize the resulting game state
+            game.set_board_matrix(matrix_after_move)
+            game.normalize_state()
+
+            if game.is_puzzle_solved():
+                print("puzzle is solved.")
+                break
