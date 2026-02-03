@@ -1,8 +1,7 @@
 import sys
+import time
 import numpy as np
 from numpy._typing import NDArray
-from sympy.strategies.core import switch
-
 
 # Sliding Brick Puzzle Game
 
@@ -17,7 +16,7 @@ class Game:
     def __init__(self):
         self.board_matrix = None
 
-    def get_board_matrix(self):
+    def get_board_matrix(self) -> NDArray[np.int32]:
         return self.board_matrix
 
     def set_board_matrix(self, matrix) -> None:
@@ -64,10 +63,21 @@ class Game:
                     brick_coords.append((i, j))
         return brick_coords
 
+    # Returns the array of brick numbers from the state in the order they appeared
+    def get_brick_numbers(self) -> list[int]:
+        flat = self.board_matrix.reshape(-1)
+        seen = set()
+        brick_numbers = []
+        for x in flat:
+            if x > 1 and x not in seen:
+                seen.add(x)
+                brick_numbers.append(x)
+        brick_numbers = np.array(brick_numbers)
+        return brick_numbers
+
     # Calculate all available moves for the matrix
     def get_moves(self) -> list[tuple[int, str]]:
-        brick_numbers = np.unique(self.board_matrix)
-        brick_numbers = brick_numbers[brick_numbers > 1]
+        brick_numbers = self.get_brick_numbers()
         all_moves = []
         for n in brick_numbers:
             moves = self.get_brick_moves(n)
@@ -128,6 +138,7 @@ class Game:
                 break
 
         if not is_move_available:
+            print("move not available.")
             return None
 
         # Sort coordinates based on the move
@@ -192,12 +203,7 @@ class Game:
         return matrix
 
     # Compares an identity of the two states
-    def compare_states(self, filename1: str, filename2: str) -> bool:
-        self.import_matrix(filename1)
-        matrix1 = np.copy(self.board_matrix)
-        self.import_matrix(filename2)
-        matrix2 = np.copy(self.board_matrix)
-
+    def compare_states(self, matrix1, matrix2) -> bool:
         # Check dimensions
         if matrix1.shape != matrix2.shape:
             return False
@@ -235,6 +241,117 @@ class Game:
                 elif self.board_matrix[i][j] == brick_num:
                     self.board_matrix[i][j] = idx
 
+    # Implements Breadth First Search:
+    # Node: a matrix state, Action: move applied,
+    # Result: new state (normalized).
+    # Stores the visited nodes and parents for the discovered states
+    # to restore the path to the solution.
+    def breadth_first_search(self):
+        node = self.get_board_matrix()
+        if self.is_puzzle_solved():
+            return [], node, set()
+
+        state_queue = [node]
+        visited_states = set()
+        visited_states.add(tuple(node.reshape(-1)))
+        parent = {}
+        actions = {}
+        start_key = tuple(node.reshape(-1))
+
+        while len(state_queue) > 0:
+            node = state_queue.pop(0)
+            self.set_board_matrix(node)
+
+            # Actions
+            moves = self.get_moves()
+            for [brick_num, move] in moves:
+                # Parent node is not changed after moving
+                self.set_board_matrix(node)
+                state_after_move = self.move_brick(brick_num, move)
+                if state_after_move is None:
+                    continue
+
+                self.set_board_matrix(state_after_move)
+                self.normalize_state()
+                norm_state = self.get_board_matrix()
+
+                # Record the visits and how the state was reached
+                key = tuple(norm_state.reshape(-1))
+                if key in visited_states:
+                    continue
+                visited_states.add(key)
+                parent[key] = tuple(node.reshape(-1))
+                actions[key] = (brick_num, move)
+
+                if self.is_puzzle_solved():
+                    # Find the path of actions done
+                    path = []
+                    curr_key = key
+                    while curr_key != start_key:
+                        path.append(actions[curr_key])
+                        curr_key = parent[curr_key]
+                    path.reverse()
+                    return path, norm_state, visited_states
+
+                state_queue.append(norm_state)
+
+        return None
+
+    # Implements Depth First Search (Preorder):
+    # Same as BFS but the stack (LIFO queue) is used,
+    # Moves are iterated in the reversed order, so the preorder traversal done.
+    def depth_first_search(self):
+        node = self.get_board_matrix()
+        if self.is_puzzle_solved():
+            return [], node, set()
+
+        state_stack = [node]
+        visited_states = set()
+        visited_states.add(tuple(node.reshape(-1)))
+        parent = {}
+        actions = {}
+        start_key = tuple(node.reshape(-1))
+
+        while len(state_stack) > 0:
+            node = state_stack.pop()
+            self.set_board_matrix(node)
+
+            moves = self.get_moves()
+            for [brick_num, move] in reversed(moves):
+                # Parent state persisted
+                self.set_board_matrix(node)
+
+                # Child state expanded
+                state_after_move = self.move_brick(brick_num, move)
+                if state_after_move is None:
+                    continue
+                self.set_board_matrix(state_after_move)
+                self.normalize_state()
+                norm_state = self.get_board_matrix()
+
+                # Record the path to the child
+                key = tuple(norm_state.reshape(-1))
+                if key in visited_states:
+                    continue
+                visited_states.add(key)
+                parent[key] = tuple(node.reshape(-1))
+                actions[key] = (brick_num, move)
+
+                # Check if the child is a solution
+                if self.is_puzzle_solved():
+                    # Find the path of actions done
+                    path = []
+                    curr_key = key
+                    while curr_key != start_key:
+                        path.append(actions[curr_key])
+                        curr_key = parent[curr_key]
+                    path.reverse()
+                    return path, norm_state, visited_states
+
+                state_stack.append(norm_state)
+
+        return None
+
 if __name__ == "__main__":
     game = Game()
 
@@ -268,8 +385,12 @@ if __name__ == "__main__":
         else:
             game.print_matrix(matrix_after_move)
     elif len(sys.argv) == 4 and sys.argv[1] == "compare":
-        isIdentical = game.compare_states(sys.argv[2], sys.argv[3])
-        print(isIdentical)
+        game.import_matrix(sys.argv[2])
+        matrix1 = np.copy(game.get_board_matrix())
+        game.import_matrix(sys.argv[3])
+        matrix2 = np.copy(game.get_board_matrix())
+        is_identical = game.compare_states(matrix1, matrix2)
+        print(is_identical)
     elif len(sys.argv) == 3 and sys.argv[1] == "norm":
         game.import_matrix(sys.argv[2])
         game.normalize_state()
@@ -299,3 +420,33 @@ if __name__ == "__main__":
             if game.is_puzzle_solved():
                 print("puzzle is solved.")
                 break
+    elif len(sys.argv) == 3 and sys.argv[1] == "bfs":
+        game.import_matrix(sys.argv[2])
+        start_time = time.perf_counter()
+        path, state, visits = game.breadth_first_search()
+        end_time = time.perf_counter()
+
+        if state is None:
+            print("No solution found.")
+        else:
+            for num, move in path:
+                print(f"({num}, {move})")
+            game.print_matrix(state)
+            print(f"Total search time: {(end_time - start_time):4f}ms.")
+            print(f"Total nodes visited: {len(visits)}.")
+            print(f"Solution length: {len(path)}.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "dfs":
+        game.import_matrix(sys.argv[2])
+        start_time = time.perf_counter()
+        path, state, visits = game.depth_first_search()
+        end_time = time.perf_counter()
+
+        if state is None:
+            print("No solution found.")
+        else:
+            for num, move in path:
+                print(f"({num}, {move})")
+            game.print_matrix(state)
+            print(f"Total search time: {(end_time - start_time):4f}ms.")
+            print(f"Total nodes visited: {len(visits)}.")
+            print(f"Solution length: {len(path)}.")
