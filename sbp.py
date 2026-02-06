@@ -249,7 +249,7 @@ class Game:
     def breadth_first_search(self):
         node = self.get_board_matrix()
         if self.is_puzzle_solved():
-            return [], node, set()
+            return [], node, 0
 
         state_queue = [node]
         visited_states = set()
@@ -258,7 +258,7 @@ class Game:
         actions = {}
         start_key = tuple(node.reshape(-1))
 
-        while len(state_queue) > 0:
+        while state_queue:
             node = state_queue.pop(0)
             self.set_board_matrix(node)
 
@@ -291,7 +291,7 @@ class Game:
                         path.append(actions[curr_key])
                         curr_key = parent[curr_key]
                     path.reverse()
-                    return path, norm_state, visited_states
+                    return path, norm_state, len(visited_states)
 
                 state_queue.append(norm_state)
 
@@ -303,7 +303,7 @@ class Game:
     def depth_first_search(self):
         node = self.get_board_matrix()
         if self.is_puzzle_solved():
-            return [], node, set()
+            return [], node, 0
 
         state_stack = [node]
         visited_states = set()
@@ -312,10 +312,9 @@ class Game:
         actions = {}
         start_key = tuple(node.reshape(-1))
 
-        while len(state_stack) > 0:
+        while state_stack:
             node = state_stack.pop()
             self.set_board_matrix(node)
-
             moves = self.get_moves()
             for [brick_num, move] in reversed(moves):
                 # Parent state persisted
@@ -346,15 +345,90 @@ class Game:
                         path.append(actions[curr_key])
                         curr_key = parent[curr_key]
                     path.reverse()
-                    return path, norm_state, visited_states
+                    return path, norm_state, len(visited_states)
 
                 state_stack.append(norm_state)
 
         return None
 
+    # Depth Limited Search implements the DFS logic
+    # but with the limited height for the tree.
+    def depth_limited_search(self, limit):
+        node = self.get_board_matrix()
+        if self.is_puzzle_solved():
+            return [], node, set()
+
+        state_stack = [(node, 0)]
+        visited_states = set()
+        parent = {}
+        actions = {}
+        start_key = tuple(node.reshape(-1))
+
+        while state_stack:
+            node, depth = state_stack.pop()
+            if depth > limit:
+                continue
+
+            # Actions
+            self.set_board_matrix(node)
+            moves = self.get_moves()
+            for brick_num, move in reversed(moves):
+                # Parent state persisted
+                self.set_board_matrix(node)
+
+                # Child state expanded
+                state_after_move = self.move_brick(brick_num, move)
+                if state_after_move is None:
+                    continue
+                self.set_board_matrix(state_after_move)
+                self.normalize_state()
+                norm_state = self.get_board_matrix()
+
+                # Record the path to the child
+                key = tuple(norm_state.reshape(-1))
+                if key in visited_states:
+                    continue
+                visited_states.add(key)
+                parent[key] = tuple(node.reshape(-1))
+                actions[key] = (brick_num, move)
+
+                # Check if the child is a solution
+                if self.is_puzzle_solved():
+                    # Find the path of actions done
+                    path = []
+                    curr_key = key
+                    while curr_key != start_key:
+                        path.append(actions[curr_key])
+                        curr_key = parent[curr_key]
+                    path.reverse()
+                    return path, norm_state, visited_states
+
+                state_stack.append((norm_state,depth+1))
+
+        return None, None, visited_states
+
+    # Iterative Deepening Search searches for a node
+    # using DFS and a limit constraint.
+    def iterative_deepening_search(self):
+        clone_matrix = self.get_clone_matrix()
+        # track visits for all limit iterations
+        total_visited = 0
+        limit = 0
+
+        # sanity check to prevent the memory leak
+        while limit < 1000:
+            self.set_board_matrix(clone_matrix)
+            path, goal_state, visited = self.depth_limited_search(limit)
+            total_visited+=len(visited)
+            if goal_state is not None:
+                return path, goal_state, total_visited
+            limit += 1
+
+        return None
+
+
 if __name__ == "__main__":
     game = Game()
-
     if len(sys.argv) == 3 and sys.argv[1] == "print":
         game.import_matrix(sys.argv[2])
         matrix = game.get_board_matrix()
@@ -433,7 +507,7 @@ if __name__ == "__main__":
                 print(f"({num}, {move})")
             game.print_matrix(state)
             print(f"Total search time: {(end_time - start_time):4f}ms.")
-            print(f"Total nodes visited: {len(visits)}.")
+            print(f"Total nodes visited: {visits}.")
             print(f"Solution length: {len(path)}.")
     elif len(sys.argv) == 3 and sys.argv[1] == "dfs":
         game.import_matrix(sys.argv[2])
@@ -448,5 +522,20 @@ if __name__ == "__main__":
                 print(f"({num}, {move})")
             game.print_matrix(state)
             print(f"Total search time: {(end_time - start_time):4f}ms.")
-            print(f"Total nodes visited: {len(visits)}.")
+            print(f"Total nodes visited: {visits}.")
+            print(f"Solution length: {len(path)}.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "ids":
+        game.import_matrix(sys.argv[2])
+        start_time = time.perf_counter()
+        path, state, visits = game.iterative_deepening_search()
+        end_time = time.perf_counter()
+
+        if state is None:
+            print("No solution found.")
+        else:
+            for num, move in path:
+                print(f"({num}, {move})")
+            game.print_matrix(state)
+            print(f"Total search time: {(end_time - start_time):4f}ms.")
+            print(f"Total nodes visited: {visits}.")
             print(f"Solution length: {len(path)}.")
